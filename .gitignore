@@ -1,3 +1,8 @@
+## 8. `.gitignore`
+
+No change.
+
+```text:Git Ignore File:.gitignore
 # Dependencies
 /node_modules
 
@@ -28,3 +33,4 @@ Thumbs.db
 !/.vscode/launch.json
 !/.vscode/extensions.json
 .history/
+```
