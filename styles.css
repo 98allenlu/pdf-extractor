@@ -1,1 +1,45 @@
+/* Base styles and custom font import */
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #f7f9fc;
+    min-height: 100vh;
+}
+.container {
+    max-width: 1000px;
+}
+.result-card {
+    /* Blue line on the left to highlight the result */
+    border-left: 4px solid #3b82f6; 
+}
 
+/* Loading Spinner Animation */
+.loading-spinner {
+    border-top-color: #3b82f6;
+    /* Standard CSS animation for spinning */
+    -webkit-animation: spin 1s linear infinite;
+    animation: spin 1s linear infinite;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Notification (Toast) Styles */
+.notification-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 1000;
+}
+.notification {
+    background-color: #333;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out;
+}
+.notification.show {
+    opacity: 1;
+}
