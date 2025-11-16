@@ -1,1 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF Image Extractor & Renamer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
+    <div class="container mx-auto bg-white p-6 sm:p-10 rounded-xl shadow-2xl">
+        <header class="mb-8 border-b pb-4">
+            <h1 class="text-3xl font-bold text-gray-900">PDF Catalog Image Extractor (Electron)</h1>
+            <p class="text-gray-500">Automatically extracts labels and saves files to your chosen folder.</p>
+        </header>
+
+        <section id="upload-section">
+            <label class="block text-sm font-medium text-gray-700 mb-2">Select your PDF file:</label>
+            
+            <div id="file-selector-box" class="p-4 rounded-lg bg-gray-100 border border-gray-300 flex justify-between items-center shadow-inner">
+                <span id="file-info-name" class="text-gray-600 truncate">No file selected.</span>
+                <button onclick="openFileSelection()" 
+                        class="ml-4 py-2 px-4 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition duration-150">
+                    Browse PDF
+                </button>
+            </div>
+            
+            <p id="file-info-path" class="mt-2 text-xs text-gray-500 truncate min-h-[1.25rem]">File Path: </p>
+            
+            <label class="block text-sm font-medium text-gray-700 mt-4 mb-2">Selected Output Folder (Automatic Save):</label>
+            <div id="folder-selector-box" class="p-4 rounded-lg bg-gray-100 border border-gray-300 flex justify-between items-center shadow-inner">
+                <span id="save-folder-path" class="text-gray-600 truncate">No folder selected.</span>
+                <button onclick="selectOutputFolder()" 
+                        class="ml-4 py-2 px-4 rounded-lg text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 transition duration-150">
+                    Select Folder
+                </button>
+            </div>
+
+            <button onclick="startProcessing()" id="process-button" 
+                class="mt-6 w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition duration-150"
+                disabled>
+                Start Extraction & Automatic Saving
+            </button>
+        </section>
+
+        <section id="status-section" class="mt-8 hidden">
+            <div class="flex items-center space-x-3 p-4 bg-yellow-50 rounded-lg shadow">
+                <div class="loading-spinner w-6 h-6 border-4 border-gray-200 rounded-full"></div>
+                <p id="status-message" class="text-yellow-800 font-medium">Processing PDF...</p>
+            </div>
+        </section>
+
+        <section id="results-section" class="mt-8 hidden">
+            <h2 class="text-2xl font-semibold text-gray-900 mb-4">Extracted Labels (<span id="result-count">0</span> Items)</h2>
+            <div id="results-list" class="space-y-4">
+                </div>
+            <p class="mt-4 text-sm text-gray-600">All items above have been automatically saved to the selected folder.</p>
+        </section>
+
+        <footer class="mt-12 pt-6 border-t text-gray-500 text-sm">
+            <p><strong>Note:</strong> This Electron application uses `pdf-parse` for text extraction and placeholder images to demonstrate the functionality. For real image extraction and layout-based labeling, a specialized native library or cloud API would be required.</p>
+        </footer>
+    </div>
+
+    <div class="notification-container" id="notification-container"></div>
+
+    <script>
+        // --- RENDERER PROCESS JAVASCRIPT LOGIC ---
+
+        // Global state
+        let uploadedFilePath = null; 
+        let saveDirectoryPath = null;
+        let extractionResults = [];
+
+        // DOM element references
+        const processButton = document.getElementById('process-button');
+        const fileInfoName = document.getElementById('file-info-name');
+        const fileInfoPath = document.getElementById('file-info-path');
+        const saveFolderPath = document.getElementById('save-folder-path');
+        const statusSection = document.getElementById('status-section');
+        const statusMessage = document.getElementById('status-message');
+        const resultsSection = document.getElementById('results-section');
+        const resultsList = document.getElementById('results-list');
+        const resultCountSpan = document.getElementById('result-count');
+        const notificationContainer = document.getElementById('notification-container');
+
+        // --- Utility Functions ---
+
+        function showCustomNotification(message, type = 'info', duration = 3000) {
+             const notification = document.createElement('div');
+            notification.className = `notification mt-2 ${type}`;
+            notification.textContent = message;
+            
+            if (type === 'success') {
+                notification.style.backgroundColor = '#10B981';
+            } else if (type === 'error') {
+                notification.style.backgroundColor = '#EF4444';
+            } else if (type === 'warning') {
+                notification.style.backgroundColor = '#F59E0B';
+            } else {
+                notification.style.backgroundColor = '#3B82F6';
+            }
+
+            notificationContainer.appendChild(notification);
+            setTimeout(() => { notification.classList.add('show'); }, 10); 
+            setTimeout(() => {
+                notification.classList.remove('show');
+                notification.addEventListener('transitionend', () => notification.remove()); 
+            }, duration);
+        }
+
+        function checkReadiness() {
+            processButton.disabled = !(uploadedFilePath && saveDirectoryPath);
+        }
+
+        // --- IPC Listener for Status Updates (Fix for TypeError) ---
+        window.addEventListener('DOMContentLoaded', () => {
+            if (window.electronAPI && window.electronAPI.onUpdateStatus) {
+                window.electronAPI.onUpdateStatus((message) => {
+                    // Reset error color when receiving a new message
+                    if (statusSection.classList.contains('bg-red-100')) {
+                        statusSection.classList.remove('bg-red-100', 'text-red-800');
+                        statusSection.classList.add('bg-yellow-50', 'text-yellow-800');
+                    }
+                    statusSection.classList.remove('hidden');
+                    statusMessage.textContent = message;
+                });
+            }
+        });
+
+
+        // --- File/Folder Selection Handlers ---
+
+        async function openFileSelection() {
+            const filePath = await window.electronAPI.openFileDialog();
+            
+            if (filePath) {
+                uploadedFilePath = filePath;
+                const fileName = uploadedFilePath.split(/[\\/]/).pop();
+                fileInfoName.textContent = fileName;
+                fileInfoPath.textContent = `File Path: ${uploadedFilePath}`;
+                showCustomNotification('PDF selected.', 'info');
+            } else {
+                uploadedFilePath = null;
+                fileInfoName.textContent = 'No file selected.';
+                fileInfoPath.textContent = 'File Path: ';
+                showCustomNotification('PDF selection cancelled.', 'warning');
+            }
+            checkReadiness();
+        }
+
+        async function selectOutputFolder() {
+            const folderPath = await window.electronAPI.selectSaveDirectory();
+
+            if (folderPath) {
+                saveDirectoryPath = folderPath;
+                saveFolderPath.textContent = folderPath;
+                showCustomNotification('Save folder selected.', 'info');
+            } else {
+                saveDirectoryPath = null;
+                saveFolderPath.textContent = 'No folder selected.';
+                showCustomNotification('Folder selection cancelled.', 'warning');
+            }
+            checkReadiness();
+        }
+
+        // --- Core Processing and Saving ---
+
+        async function startProcessing() {
+            if (!uploadedFilePath || !saveDirectoryPath) {
+                showCustomNotification('Please select both a PDF and a save folder.', 'error');
+                return;
+            }
+
+            // UI State change to loading
+            processButton.disabled = true;
+            statusSection.classList.remove('hidden');
+            statusMessage.textContent = "Starting PDF analysis..."; 
+            resultsSection.classList.add('hidden'); 
+
+            try {
+                // Call the main process to execute extraction AND automatic saving
+                const response = await window.electronAPI.startProcessing({
+                    filePath: uploadedFilePath,
+                    savePath: saveDirectoryPath
+                });
+
+                extractionResults = response.results;
+                
+                // Update UI with results
+                displayResults(extractionResults);
+                
+                if (response.saveStatus.success) {
+                    showCustomNotification(`Success! All files saved to ${saveDirectoryPath}`, 'success', 5000);
+                } else {
+                    showCustomNotification(`Finished with errors: ${response.saveStatus.message}`, 'error', 7000);
+                }
+
+            } catch (error) {
+                console.error("Processing failed:", error);
+                statusMessage.textContent = `CRITICAL ERROR: ${error.message}`;
+                statusSection.classList.remove('bg-yellow-50'); 
+                statusSection.classList.add('bg-red-100', 'text-red-800'); 
+                showCustomNotification(`CRITICAL ERROR: ${error.message}`, 'error', 10000);
+
+            } finally {
+                processButton.disabled = false;
+            }
+        }
+
+        // --- Result Display ---
+
+        function displayResults(results) {
+            resultsList.innerHTML = '';
+            resultCountSpan.textContent = results.length;
+
+            results.forEach((item) => {
+                const card = document.createElement('div');
+                card.className = 'result-card p-4 bg-gray-50 rounded-lg flex items-center space-x-4 shadow';
+                
+                card.innerHTML = `
+                    <img src="${item.dataUrl}" alt="Extracted Image Placeholder" class="w-16 h-16 object-cover rounded-md shadow-md border border-gray-200">
+                    <div class="flex-1">
+                        <p class="text-xs text-gray-500">Saved Filename (PNG):</p>
+                        <p class="text-lg font-mono text-gray-900 break-all">${item.name}</p>
+                    </div>
+                `;
+                resultsList.appendChild(card);
+            });
+
+            resultsSection.classList.remove('hidden');
+        }
+        
+        // Download Single function remains, but is not exposed in the UI
+        async function downloadSingle(item) {
+            try {
+                const response = await window.electronAPI.downloadSingle(item);
+                if (response.success) {
+                    showCustomNotification(response.message, 'success');
+                } else {
+                    showCustomNotification(response.message, 'error');
+                }
+            } catch (error) {
+                console.error("Error during single download:", error);
+                showCustomNotification('Failed to save file.', 'error');
+            }
+        }
+
+    </script>
+
+</body>
+</html>
