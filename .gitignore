@@ -1,1 +1,30 @@
+# Dependencies
+/node_modules
 
+# Logs
+/npm-debug.log
+/yarn-error.log*
+/log.log
+/logs
+
+# Production
+/build
+/dist
+/release
+
+# Temporary files, caches, and build artifacts
+/temp
+/tmp
+/out
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE Folders and Files (VS Code recommended)
+.vscode/*
+!/.vscode/settings.json
+!/.vscode/tasks.json
+!/.vscode/launch.json
+!/.vscode/extensions.json
+.history/
