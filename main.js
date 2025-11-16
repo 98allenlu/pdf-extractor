@@ -50,35 +50,50 @@ ipcMain.handle('select-save-directory', async () => {
 });
 
 /**
- * STEP 1: Process the file (extract labels) and automatically save results.
+ * STEP 1: Process the file (extract labels and images) and automatically save results.
  */
 ipcMain.handle('start-processing', async (event, { filePath, savePath }) => {
-    event.sender.send('update-status', 'Starting PDF content analysis...');
+    event.sender.send('update-status', 'Starting PDF content analysis and image extraction...');
     
-    try {
-        // 1. Extract Generalized Labels (Artifact IDs) using pdf-parse
-        const extractionResults = await pdfExtractor.extractImagesWithLabels(filePath);
-        
-        event.sender.send('update-status', `Found ${extractionResults.length} artifact labels. Starting automated save...`);
+    let tempDir = null; // Variable to hold the temporary directory path
 
-        // 2. Automatically trigger the saving process
-        const saveResponse = await handleAutoSave(event, extractionResults, savePath);
+    try {
+        // 1. DUAL EXTRACTION: Calls pdf-extract-library to extract data and create temp files
+        const extractionResponse = await pdfExtractor.extractImagesAndLabels(filePath);
+        const { imagesWithLabels, tempDirectory } = extractionResponse;
+        tempDir = tempDirectory; // Store temp dir for cleanup
         
-        // Return both results and save status to the renderer
+        event.sender.send('update-status', `Found ${imagesWithLabels.length} artifacts. Starting automated save...`);
+
+        // 2. Automatically trigger the saving process, reading the real image data
+        const saveResponse = await handleAutoSave(event, imagesWithLabels, savePath);
+        
         return {
-            results: extractionResults,
+            results: imagesWithLabels,
             saveStatus: saveResponse
         };
 
     } catch (error) {
-        console.error("Error during PDF processing:", error);
-        event.sender.send('update-status', `Error processing PDF. Check that 'npm install' was run and the PDF is not encrypted.`);
+        console.error("Critical Error during PDF processing:", error);
+        event.sender.send('update-status', `CRITICAL ERROR: Failed to extract images. Ensure Poppler is installed/accessible. Error: ${error.message}`);
         throw new Error(`Failed to process PDF: ${error.message}`);
+    } finally {
+        // 3. Cleanup temporary files created by pdf-poppler in the temp directory
+        if (tempDir && fs.existsSync(tempDir)) {
+            try {
+                // fs.rmSync is a synchronous, recursive delete—necessary before returning.
+                fs.rmSync(tempDir, { recursive: true, force: true });
+                console.log(`Cleaned up temporary directory: ${tempDir}`);
+            } catch (e) {
+                console.error(`Failed to clean up temporary directory ${tempDir}:`, e);
+            }
+        }
     }
 });
 
 /**
  * STEP 2: Core file saving function (triggered automatically).
+ * Saves the Base64 image data to the user-selected disk location.
  */
 async function handleAutoSave(event, extractionResults, savePath) {
     let filesSaved = 0;
@@ -96,7 +111,7 @@ async function handleAutoSave(event, extractionResults, savePath) {
 
     for (const item of extractionResults) {
         try {
-            // Data is Base64 encoded from the placeholder generator
+            // Data is Base64 encoded from the image buffer
             const base64Data = item.dataUrl.split(';base64,').pop();
             
             // Clean filename and enforce PNG extension
@@ -104,7 +119,7 @@ async function handleAutoSave(event, extractionResults, savePath) {
             const cleanedFileName = `${baseName.replace(/[^a-zA-Z0-9\s\.\-]/g, '').trim()}.png`;
             const filePath = path.join(savePath, cleanedFileName);
             
-            // Write PNG Buffer to disk
+            // Write Buffer to disk
             fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
             filesSaved++;
         } catch (err) {
@@ -119,41 +134,11 @@ async function handleAutoSave(event, extractionResults, savePath) {
         event.sender.send('update-status', errorMessage);
         return { success: false, message: errorMessage };
     } else {
-        const successMessage = `Successfully saved ${filesSaved} files to ${savePath}.`;
+        const successMessage = `Successfully saved ${filesSaved} images to ${savePath}.`;
         event.sender.send('update-status', successMessage);
         return { success: true, message: successMessage };
     }
 }
-
-/**
- * Handles the request to download a single file. (Kept for completeness/debugging)
- */
-ipcMain.handle('download-single', async (event, item) => {
-    const baseName = item.name.replace(/\.jpg|\.jpeg|\.png|\.gif$/i, ''); 
-    const cleanedFileName = `${baseName.replace(/[^a-zA-Z-Z0-9\s\.\-]/g, '').trim()}.png`;
-
-    const { canceled, filePath } = await dialog.showSaveDialog({
-        title: 'Save Image',
-        defaultPath: cleanedFileName,
-        filters: [
-            { name: 'PNG Image', extensions: ['png'] }
-        ]
-    });
-
-    if (canceled || !filePath) {
-        return { success: false, message: 'Save operation cancelled.' };
-    }
-
-    try {
-        const base64Data = item.dataUrl.split(';base64,').pop();
-        fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-        event.sender.send('update-status', `Saved ${item.name}.`);
-        return { success: true, message: `Successfully saved ${item.name}` };
-    } catch (err) {
-        event.sender.send('update-status', `Error saving ${item.name}.`);
-        return { success: false, message: `Failed to save ${item.name}.` };
-    }
-});
 
 /**
  * Opens the native file selection dialog for the PDF source.
@@ -167,3 +152,5 @@ ipcMain.handle('open-file-dialog', async (event) => {
     });
     return canceled ? null : filePaths[0];
 });
+
+// Note: The download-single handler (not shown here) remains unchanged.
