@@ -6,8 +6,8 @@ const pdf = require('pdf-parse');
 const Poppler = require('node-poppler'); 
 const _ = require('lodash'); 
 
-// --- CRITICAL FIX: HARDCODED POPPLER PATH ---
-// This path points directly to the 'bin' folder containing pdftocairo.exe on your system.
+// --- CRITICAL: Hardcoded Poppler Path ---
+// This is the specific location where the Poppler executables (pdftocairo.exe, etc.) reside.
 const POPPLER_PATH = "C:\\Program Files\\poppler-25.08.0\\poppler-25.08.0\\bin"; 
 
 // Regex for finding accession numbers (YYYY.NN.MM...)
@@ -88,3 +88,15 @@ async function extractImagesAndLabels(pdfFilePath) {
 module.exports = {
     extractImagesAndLabels
 };
+```
+
+---
+
+## Your Next Steps: Launch the Application 🚀
+
+Since all modules are now installed and the code syntax is fixed, your app should finally launch correctly.
+
+1.  **Open VS Code Terminal.**
+2.  **Run the Application:**
+    ```bash
+    npm start
