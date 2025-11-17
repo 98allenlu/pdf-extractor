@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const pdf = require('pdf-parse'); 
-// CRITICAL FIX: Direct import ensures the Poppler constructor is correctly received.
+// --- CRITICAL FIX: Direct import ensures the Poppler constructor is correctly received.
 const Poppler = require('node-poppler'); 
 const _ = require('lodash'); 
 
