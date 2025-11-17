@@ -2,12 +2,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const pdf = require('pdf-parse'); 
-// --- CRITICAL FIX: Direct import ensures the Poppler constructor is correctly received.
+// CRITICAL FIX: Direct import ensures the Poppler constructor is correctly received.
 const Poppler = require('node-poppler'); 
 const _ = require('lodash'); 
 
-// --- CRITICAL: Hardcoded Poppler Path ---
-// This is the specific location where the Poppler executables (pdftocairo.exe, etc.) reside.
+// --- CRITICAL FIX: HARDCODED POPPLER PATH ---
+// This path points directly to the 'bin' folder containing pdftocairo.exe on your system.
 const POPPLER_PATH = "C:\\Program Files\\poppler-25.08.0\\poppler-25.08.0\\bin"; 
 
 // Regex for finding accession numbers (YYYY.NN.MM...)
@@ -92,9 +92,9 @@ module.exports = {
 
 ---
 
-## Your Next Steps: Launch the Application 🚀
+## Final Step-by-Step Instructions
 
-Since all modules are now installed and the code syntax is fixed, your app should finally launch correctly.
+You have performed the necessary `npm install` and now you have the clean code.
 
 1.  **Open VS Code Terminal.**
 2.  **Run the Application:**
