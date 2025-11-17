@@ -1,24 +1,32 @@
 {
   "name": "pdf-image-renamer-electron",
   "version": "1.0.0",
-  "description": "A desktop app to extract artifact accession numbers from PDFs and save labeled placeholder images using pdf-poppler.",
+  "description": "A desktop app to extract artifact accession numbers from PDFs and save labeled placeholder images using Poppler CLI (with optional node-poppler).",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "rebuild": "npm rebuild --runtime=electron --target=31.0.0 --dist-url=https://electronjs.org/headers",
     "test:extraction": "echo \"Running extraction tests...\""
   },
   "keywords": [
     "Electron",
     "PDF",
     "Extraction",
-    "Automation"
+    "Automation",
+    "Poppler"
   ],
   "author": "Lucie Allen",
   "license": "ISC",
   "dependencies": {
+    "lodash": "^4.17.21",
     "pdf-parse": "^1.1.1",
-    "pdf-poppler": "^0.2.3",
-    "lodash": "^4.17.21"
+
+    /** 
+     * OPTIONAL — may fail on some systems.
+     * Your app works WITHOUT IT because pdf-extract-library.js
+     * gracefully falls back to 'pdftocairo' CLI.
+     */
+    "node-poppler": "^1.0.0"
   },
   "devDependencies": {
     "electron": "^31.0.0"
