@@ -26,7 +26,7 @@
      * Your app works WITHOUT IT because pdf-extract-library.js
      * gracefully falls back to 'pdftocairo' CLI.
      */
-    "node-poppler": "^1.0.0"
+    "node-poppler": "^0.2.3"
   },
   "devDependencies": {
     "electron": "^31.0.0"
