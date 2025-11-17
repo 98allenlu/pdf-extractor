@@ -88,15 +88,3 @@ async function extractImagesAndLabels(pdfFilePath) {
 module.exports = {
     extractImagesAndLabels
 };
-```
-
----
-
-## Final Step-by-Step Instructions
-
-You have performed the necessary `npm install` and now you have the clean code.
-
-1.  **Open VS Code Terminal.**
-2.  **Run the Application:**
-    ```bash
-    npm start
