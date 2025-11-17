@@ -2,6 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const pdfExtractor = require('./pdf-extract-library'); 
+// NOTE: We rely on the poppler executable path being set inside pdf-extract-library.js
+// We removed the unused 'execSync' import that could cause issues.
+
 
 // --- Main Application Window Logic ---
 
