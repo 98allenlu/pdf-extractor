@@ -10,7 +10,7 @@ const _ = require('lodash');
 const ARTIFACT_ID_REGEX = /(\d{4}\.\d{1,3}\.\d{1,3}[a-z]?[-\w]*(?:\s[\w\s,]+)?)/g;
 
 // If you want to hardcode a Poppler bin dir, put it here (otherwise leave null to use system PATH)
-const POPPLER_PATH = null;
+const POPPLER_PATH = "C:\\ProgramData\\chocolatey\\lib\\poppler\\tools\\bin";
 
 /**
  * Attempt to load the node-poppler wrapper in a tolerant way.
