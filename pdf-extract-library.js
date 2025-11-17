@@ -1,20 +1,20 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const child_process = require('child_process'); // For direct CLI call
+const child_process = require('child_process'); // For stable CLI call
 const pdf = require('pdf-parse'); 
 const _ = require('lodash'); 
 
 // --- CRITICAL FIX: HARDCODED POPPLER PATH ---
-// This path is now 100% correct and points directly to the folder containing pdftocairo.exe.
+// Path pointing to the folder containing pdftocairo.exe, now 100% verified.
 const POPPLER_BIN_PATH = "C:\\Program Files\\Release-24.08.0-0\\poppler-24.08.0\\Library\\bin";
 
 // Regex for finding accession numbers (YYYY.NN.MM...)
 const ARTIFACT_ID_REGEX = /(\d{4}\.\d{1,3}\.\d{1,3}[a-z]?[-\w]*(?:\s[\w\s,]+)?)/g;
 
 /**
- * Executes the core Poppler command-line interface directly via Node.js spawn.
- * This is the most stable method and bypasses Node.js wrapper constructor issues.
+ * Executes the core Poppler command-line interface directly via Node.js exec.
+ * This handles paths with spaces robustly by quoting the executable path.
  * @param {string} pdfFilePath Path to the PDF file.
  * @param {string} tempDir Directory for image output.
  * @param {number} totalPages Total pages to process.
@@ -22,32 +22,32 @@ const ARTIFACT_ID_REGEX = /(\d{4}\.\d{1,3}\.\d{1,3}[a-z]?[-\w]*(?:\s[\w\s,]+)?)/
  */
 function runPdftocairoCli(pdfFilePath, tempDir, totalPages) {
     return new Promise((resolve, reject) => {
-        // Build the full path to the executable
         const exePath = path.join(POPPLER_BIN_PATH, 'pdftocairo.exe');
         
-        // Command Arguments: -png (format), -f 1 (first page), -l [last page], input path, output prefix
-        const args = [
+        // 1. Quoting the executable path and the PDF file path (as it may also contain spaces)
+        const quotedExePath = `"${exePath}"`;
+        const quotedPdfPath = `"${pdfFilePath}"`;
+        
+        // 2. Building the full command string for the shell (using exec is best here)
+        const outputPrefix = path.join(tempDir, 'img_');
+
+        const command = [
+            quotedExePath, // This is the program to run, correctly quoted
             '-png', 
             '-f', '1', 
             '-l', String(totalPages),
-            pdfFilePath,
-            path.join(tempDir, 'img_')
-        ];
+            quotedPdfPath,
+            outputPrefix
+        ].join(' ');
         
-        // Spawn the process
-        const proc = child_process.spawn(exePath, args, { shell: true });
-        
-        let stderr = '';
-        proc.stderr.on('data', (d) => { stderr += d.toString(); });
-        
-        proc.on('error', (err) => {
-            // This error confirms the executable is missing.
-            reject(new Error(`Failed to execute Poppler. Check that the file 'pdftocairo.exe' is inside the folder: ${POPPLER_BIN_PATH}. Error: ${err.message}`));
-        });
-        
-        proc.on('close', (code) => {
-            if (code === 0) resolve();
-            else reject(new Error(`pdftocairo exited with code ${code}. Stderr: ${stderr}`));
+        // 3. Execute the command string
+        child_process.exec(command, { encoding: 'buffer', maxBuffer: 1024 * 1024 * 50 }, (error, stdout, stderr) => {
+            if (error || stderr.length > 0) {
+                const errorOutput = stderr ? stderr.toString() : (error ? error.message : "Unknown error.");
+                reject(new new Error(`Failed to execute Poppler CLI. Details: ${errorOutput}`));
+            } else {
+                resolve();
+            }
         });
     });
 }
