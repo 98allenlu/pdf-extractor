@@ -1,22 +1,18 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const pdfExtractor = require('./pdf-extract-library'); 
-// NOTE: We rely on the poppler executable path being set inside pdf-extract-library.js
-// We removed the unused 'execSync' import that could cause issues.
+const { extractImagesAndLabels } = require('./pdf-extract-library');
 
-
-// --- Main Application Window Logic ---
+let mainWindow;
 
 function createWindow() {
-    const mainWindow = new BrowserWindow({
+    mainWindow = new BrowserWindow({
         width: 1000,
         height: 800,
-        icon: path.join(__dirname, 'icon.png'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
-            nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            nodeIntegration: false
         }
     });
 
@@ -37,121 +33,40 @@ app.on('activate', () => {
     }
 });
 
+// --- IPC Communication Handlers ---
 
-// --- IPC Handlers (Communication between UI and Native) ---
-
-/**
- * Handles the native file dialog to select the folder where all images will be saved.
- */
-ipcMain.handle('select-save-directory', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-        properties: ['openDirectory', 'createDirectory'],
-        title: 'Select Folder to Save All Images'
-    });
-
-    return canceled ? null : filePaths[0];
-});
-
-/**
- * Opens the native file selection dialog for the PDF source.
- */
-ipcMain.handle('open-file-dialog', async (event) => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-        properties: ['openFile'],
-        filters: [
-            { name: 'PDF Documents', extensions: ['pdf'] }
-        ]
-    });
-    return canceled ? null : filePaths[0];
-});
-
-
-/**
- * STEP 1: Process the file (extract labels and images) and automatically save results.
- */
-ipcMain.handle('start-processing', async (event, { filePath, savePath }) => {
-    event.sender.send('update-status', 'Starting PDF content analysis and image extraction...');
-    
-    let tempDir = null; // Variable to hold the temporary directory path
-
+// Handler for the main extraction logic
+ipcMain.handle('start-processing', async (event, pdfFilePath) => {
     try {
-        // 1. DUAL EXTRACTION: Calls pdf-extract-library to extract data and create temp files
-        const extractionResponse = await pdfExtractor.extractImagesAndLabels(filePath);
-        const { imagesWithLabels, tempDirectory } = extractionResponse;
-        tempDir = tempDirectory; // Store temp dir for cleanup
-        
-        event.sender.send('update-status', `Found ${imagesWithLabels.length} artifacts. Starting automated save...`);
-
-        // 2. Automatically trigger the saving process, reading the real image data
-        const saveResponse = await handleAutoSave(event, imagesWithLabels, savePath);
-        
-        return {
-            results: imagesWithLabels,
-            saveStatus: saveResponse
-        };
-
+        const result = await extractImagesAndLabels(pdfFilePath);
+        return result;
     } catch (error) {
-        console.error("Critical Error during PDF processing:", error);
-        event.sender.send('update-status', `CRITICAL ERROR: Extraction failed. Ensure Poppler is installed/accessible. Error: ${error.message}`);
-        throw new Error(`Failed to process PDF: ${error.message}`);
-    } finally {
-        // 3. Cleanup temporary files created by pdf-poppler in the temp directory
-        if (tempDir && fs.existsSync(tempDir)) {
-            try {
-                fs.rmSync(tempDir, { recursive: true, force: true });
-                console.log(`Cleaned up temporary directory: ${tempDir}`);
-            } catch (e) {
-                console.error(`Failed to clean up temporary directory ${tempDir}:`, e);
-            }
-        }
+        // Send a detailed error message back to the renderer
+        console.error("Main Process Error:", error);
+        throw new Error(error.message);
     }
 });
 
-/**
- * STEP 2: Core file saving function (triggered automatically).
- * Saves the Base64 image data to the user-selected disk location.
- */
-async function handleAutoSave(event, extractionResults, savePath) {
-    let filesSaved = 0;
-    let errors = [];
-
-    // Ensure the directory exists
+// NEW: Handler for opening the extracted file in the OS's default application
+ipcMain.handle('open-file-in-shell', async (event, filePath) => {
     try {
-        if (!fs.existsSync(savePath)) {
-            fs.mkdirSync(savePath, { recursive: true });
-        }
-    } catch (e) {
-        return { success: false, message: `Failed to create directory: ${e.message}` };
+        await shell.openPath(filePath);
+    } catch (error) {
+        console.error("Shell Open Error:", error);
+        // Show an error to the user if the file couldn't be opened
+        dialog.showErrorBox('File Open Error', `Could not open file: ${path.basename(filePath)}\nDetails: ${error.message}`);
     }
+});
 
-
-    for (const item of extractionResults) {
-        try {
-            // Data is Base64 encoded from the image buffer
-            const base64Data = item.dataUrl.split(';base64,').pop();
-            
-            // Clean filename and enforce PNG extension
-            const baseName = item.name.replace(/\.jpg|\.jpeg|\.png|\.gif$/i, ''); 
-            const cleanedFileName = `${baseName.replace(/[^a-zA-Z0-9\s\.\-]/g, '').trim()}.png`;
-            const filePath = path.join(savePath, cleanedFileName);
-            
-            // Write Buffer to disk
-            fs.writeFileSync(filePath, Buffer.from(base64Data, 'base64'));
-            filesSaved++;
-        } catch (err) {
-            console.error(`Error saving ${item.name}:`, err);
-            errors.push(item.name);
-            event.sender.send('update-status', `Error saving ${item.name}`);
+// NEW: Handler for clearing the temporary folder
+ipcMain.handle('clear-temp', (event, tempDirPath) => {
+    try {
+        if (tempDirPath && fs.existsSync(tempDirPath)) {
+            // Use rmSync with recursive/force for reliable deletion of the folder and contents
+            fs.rmSync(tempDirPath, { recursive: true, force: true });
+            console.log(`Cleaned up temp directory: ${tempDirPath}`);
         }
+    } catch (error) {
+        console.error("Temp Cleanup Error:", error);
     }
-    
-    if (errors.length > 0) {
-        const errorMessage = `Saved ${filesSaved} files to ${savePath}. Failed to save: ${errors.length} file(s).`;
-        event.sender.send('update-status', errorMessage);
-        return { success: false, message: errorMessage };
-    } else {
-        const successMessage = `Successfully saved ${filesSaved} images to ${savePath}.`;
-        event.sender.send('update-status', successMessage);
-        return { success: true, message: successMessage };
-    }
-}
+});

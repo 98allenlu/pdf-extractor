@@ -1,254 +1,159 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PDF Image Extractor & Renamer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <title>PDF Image Extractor</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+    <div class="container">
+        <h1>PDF Image & Label Extractor</h1>
+        <p>Uses Adobe PDF Services API for sophisticated image extraction and renaming based on layout analysis.</p>
 
-    <div class="container mx-auto bg-white p-6 sm:p-10 rounded-xl shadow-2xl">
-        <header class="mb-8 border-b pb-4">
-            <h1 class="text-3xl font-bold text-gray-900">PDF Catalog Image Extractor (Electron)</h1>
-            <p class="text-gray-500">Automatically extracts labels and saves files to your chosen folder.</p>
-        </header>
+        <div id="input-area" class="card">
+            <h2>1. Select PDF File</h2>
+            <input type="file" id="pdfFile" accept=".pdf" required>
+            <p id="fileNameDisplay">No file selected.</p>
+            <p class="small-text">Note: Ensure you have replaced the Adobe API credentials in <code>pdf-extract-library.js</code>.</p>
+            <button id="extractButton" disabled>Start Extraction & Naming</button>
+        </div>
 
-        <section id="upload-section">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Select your PDF file:</label>
-            
-            <div id="file-selector-box" class="p-4 rounded-lg bg-gray-100 border border-gray-300 flex justify-between items-center shadow-inner">
-                <span id="file-info-name" class="text-gray-600 truncate">No file selected.</span>
-                <button onclick="openFileSelection()" 
-                        class="ml-4 py-2 px-4 rounded-lg text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 transition duration-150">
-                    Browse PDF
-                </button>
-            </div>
-            
-            <p id="file-info-path" class="mt-2 text-xs text-gray-500 truncate min-h-[1.25rem]">File Path: </p>
-            
-            <label class="block text-sm font-medium text-gray-700 mt-4 mb-2">Selected Output Folder (Automatic Save):</label>
-            <div id="folder-selector-box" class="p-4 rounded-lg bg-gray-100 border border-gray-300 flex justify-between items-center shadow-inner">
-                <span id="save-folder-path" class="text-gray-600 truncate">No folder selected.</span>
-                <button onclick="selectOutputFolder()" 
-                        class="ml-4 py-2 px-4 rounded-lg text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 transition duration-150">
-                    Select Folder
-                </button>
-            </div>
+        <div id="status-area" class="card hidden">
+            <h2>Status</h2>
+            <p id="statusMessage">Processing started...</p>
+            <progress id="progressBar" max="100" value="0"></progress>
+        </div>
 
-            <button onclick="startProcessing()" id="process-button" 
-                class="mt-6 w-full py-3 px-4 border border-transparent rounded-lg shadow-sm text-base font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 transition duration-150"
-                disabled>
-                Start Extraction & Automatic Saving
-            </button>
-        </section>
-
-        <section id="status-section" class="mt-8 hidden">
-            <div class="flex items-center space-x-3 p-4 bg-yellow-50 rounded-lg shadow">
-                <div class="loading-spinner w-6 h-6 border-4 border-gray-200 rounded-full"></div>
-                <p id="status-message" class="text-yellow-800 font-medium">Processing PDF...</p>
-            </div>
-        </section>
-
-        <section id="results-section" class="mt-8 hidden">
-            <h2 class="text-2xl font-semibold text-gray-900 mb-4">Extracted Labels (<span id="result-count">0</span> Items)</h2>
-            <div id="results-list" class="space-y-4">
+        <div id="results-area" class="card hidden">
+            <h2>2. Extracted Files (Click to Open)</h2>
+            <p id="resultCount"></p>
+            <div id="imageGrid" class="image-grid">
                 </div>
-            <p class="mt-4 text-sm text-gray-600">All items above have been automatically saved to the selected folder.</p>
-        </section>
-
-        <footer class="mt-12 pt-6 border-t text-gray-500 text-sm">
-            <p><strong>Note:</strong> This Electron application uses `pdf-parse` for text extraction and placeholder images to demonstrate the functionality. For real image extraction and layout-based labeling, a specialized native library or cloud API would be required.</p>
-        </footer>
+            <button id="clearButton" class="clear-button">Clear & Restart</button>
+        </div>
     </div>
 
-    <div class="notification-container" id="notification-container"></div>
-
     <script>
-        // --- RENDERER PROCESS JAVASCRIPT LOGIC ---
+        const fileInput = document.getElementById('pdfFile');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const extractButton = document.getElementById('extractButton');
+        const statusArea = document.getElementById('status-area');
+        const statusMessage = document.getElementById('statusMessage');
+        const progressBar = document.getElementById('progressBar');
+        const resultsArea = document.getElementById('results-area');
+        const imageGrid = document.getElementById('imageGrid');
+        const resultCount = document.getElementById('resultCount');
+        const clearButton = document.getElementById('clearButton');
 
-        // Global state
-        let uploadedFilePath = null; 
-        let saveDirectoryPath = null;
-        let extractionResults = [];
+        let currentFilePath = null;
+        let currentTempDir = null;
 
-        // DOM element references
-        const processButton = document.getElementById('process-button');
-        const fileInfoName = document.getElementById('file-info-name');
-        const fileInfoPath = document.getElementById('file-info-path');
-        const saveFolderPath = document.getElementById('save-folder-path');
-        const statusSection = document.getElementById('status-section');
-        const statusMessage = document.getElementById('status-message');
-        const resultsSection = document.getElementById('results-section');
-        const resultsList = document.getElementById('results-list');
-        const resultCountSpan = document.getElementById('result-count');
-        const notificationContainer = document.getElementById('notification-container');
-
-        // --- Utility Functions ---
-
-        function showCustomNotification(message, type = 'info', duration = 3000) {
-             const notification = document.createElement('div');
-            notification.className = `notification mt-2 ${type}`;
-            notification.textContent = message;
-            
-            if (type === 'success') {
-                notification.style.backgroundColor = '#10B981';
-            } else if (type === 'error') {
-                notification.style.backgroundColor = '#EF4444';
-            } else if (type === 'warning') {
-                notification.style.backgroundColor = '#F59E0B';
+        // --- 1. User selects file ---
+        fileInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file && file.type === 'application/pdf') {
+                currentFilePath = file.path;
+                fileNameDisplay.textContent = `File Selected: ${file.name}`;
+                extractButton.disabled = false;
             } else {
-                notification.style.backgroundColor = '#3B82F6';
-            }
-
-            notificationContainer.appendChild(notification);
-            setTimeout(() => { notification.classList.add('show'); }, 10); 
-            setTimeout(() => {
-                notification.classList.remove('show');
-                notification.addEventListener('transitionend', () => notification.remove()); 
-            }, duration);
-        }
-
-        function checkReadiness() {
-            processButton.disabled = !(uploadedFilePath && saveDirectoryPath);
-        }
-
-        // --- IPC Listener for Status Updates (Fix for TypeError) ---
-        window.addEventListener('DOMContentLoaded', () => {
-            if (window.electronAPI && window.electronAPI.onUpdateStatus) {
-                window.electronAPI.onUpdateStatus((message) => {
-                    // Reset error color when receiving a new message
-                    if (statusSection.classList.contains('bg-red-100')) {
-                        statusSection.classList.remove('bg-red-100', 'text-red-800');
-                        statusSection.classList.add('bg-yellow-50', 'text-yellow-800');
-                    }
-                    statusSection.classList.remove('hidden');
-                    statusMessage.textContent = message;
-                });
+                currentFilePath = null;
+                fileNameDisplay.textContent = 'No file selected.';
+                extractButton.disabled = true;
             }
         });
 
+        // --- 2. Start Extraction ---
+        extractButton.addEventListener('click', async () => {
+            if (!currentFilePath) return;
 
-        // --- File/Folder Selection Handlers ---
-
-        async function openFileSelection() {
-            const filePath = await window.electronAPI.openFileDialog();
-            
-            if (filePath) {
-                uploadedFilePath = filePath;
-                const fileName = uploadedFilePath.split(/[\\/]/).pop();
-                fileInfoName.textContent = fileName;
-                fileInfoPath.textContent = `File Path: ${uploadedFilePath}`;
-                showCustomNotification('PDF selected.', 'info');
-            } else {
-                uploadedFilePath = null;
-                fileInfoName.textContent = 'No file selected.';
-                fileInfoPath.textContent = 'File Path: ';
-                showCustomNotification('PDF selection cancelled.', 'warning');
-            }
-            checkReadiness();
-        }
-
-        async function selectOutputFolder() {
-            const folderPath = await window.electronAPI.selectSaveDirectory();
-
-            if (folderPath) {
-                saveDirectoryPath = folderPath;
-                saveFolderPath.textContent = folderPath;
-                showCustomNotification('Save folder selected.', 'info');
-            } else {
-                saveDirectoryPath = null;
-                saveFolderPath.textContent = 'No folder selected.';
-                showCustomNotification('Folder selection cancelled.', 'warning');
-            }
-            checkReadiness();
-        }
-
-        // --- Core Processing and Saving ---
-
-        async function startProcessing() {
-            if (!uploadedFilePath || !saveDirectoryPath) {
-                showCustomNotification('Please select both a PDF and a save folder.', 'error');
-                return;
-            }
-
-            // UI State change to loading
-            processButton.disabled = true;
-            statusSection.classList.remove('hidden');
-            statusMessage.textContent = "Starting PDF analysis..."; 
-            resultsSection.classList.add('hidden'); 
+            statusArea.classList.remove('hidden');
+            resultsArea.classList.add('hidden');
+            imageGrid.innerHTML = '';
+            extractButton.disabled = true;
+            fileInput.disabled = true;
 
             try {
-                // Call the main process to execute extraction AND automatic saving
-                const response = await window.electronAPI.startProcessing({
-                    filePath: uploadedFilePath,
-                    savePath: saveDirectoryPath
-                });
+                statusMessage.textContent = 'Uploading to Adobe and starting extraction... (This may take a minute)';
+                progressBar.value = 50;
 
-                extractionResults = response.results;
+                // Call the main process extraction logic
+                const result = await window.electronAPI.startProcessing(currentFilePath);
                 
-                // Update UI with results
-                displayResults(extractionResults);
+                progressBar.value = 100;
+                statusMessage.textContent = `Success! Extracted ${result.imagesWithLabels.length} files.`;
+
+                resultCount.textContent = `Total Files Extracted: ${result.imagesWithLabels.length}`;
+                currentTempDir = result.tempDirectory;
                 
-                if (response.saveStatus.success) {
-                    showCustomNotification(`Success! All files saved to ${saveDirectoryPath}`, 'success', 5000);
-                } else {
-                    showCustomNotification(`Finished with errors: ${response.saveStatus.message}`, 'error', 7000);
-                }
+                displayResults(result.imagesWithLabels);
+                resultsArea.classList.remove('hidden');
 
             } catch (error) {
-                console.error("Processing failed:", error);
+                console.error("Extraction Error:", error);
                 statusMessage.textContent = `CRITICAL ERROR: ${error.message}`;
-                statusSection.classList.remove('bg-yellow-50'); 
-                statusSection.classList.add('bg-red-100', 'text-red-800'); 
-                showCustomNotification(`CRITICAL ERROR: ${error.message}`, 'error', 10000);
-
+                progressBar.value = 0;
             } finally {
-                processButton.disabled = false;
+                extractButton.disabled = true; 
+                fileInput.disabled = false;
             }
-        }
+        });
 
-        // --- Result Display ---
-
-        function displayResults(results) {
-            resultsList.innerHTML = '';
-            resultCountSpan.textContent = results.length;
-
-            results.forEach((item) => {
-                const card = document.createElement('div');
-                card.className = 'result-card p-4 bg-gray-50 rounded-lg flex items-center space-x-4 shadow';
+        // --- 3. Display Results and Handle Clicks ---
+        function displayResults(images) {
+            images.forEach(imageInfo => {
+                const itemDiv = document.createElement('div');
+                itemDiv.className = 'image-item';
+                itemDiv.title = `Click to open: ${imageInfo.name}`;
                 
-                card.innerHTML = `
-                    <img src="${item.dataUrl}" alt="Extracted Image Placeholder" class="w-16 h-16 object-cover rounded-md shadow-md border border-gray-200">
-                    <div class="flex-1">
-                        <p class="text-xs text-gray-500">Saved Filename (PNG):</p>
-                        <p class="text-lg font-mono text-gray-900 break-all">${item.name}</p>
-                    </div>
-                `;
-                resultsList.appendChild(card);
+                // Canvas to display the image preview
+                const canvas = document.createElement('canvas');
+                canvas.className = 'image-canvas';
+                canvas.width = 150;
+                canvas.height = 150;
+                
+                const labelP = document.createElement('p');
+                labelP.className = 'image-label';
+                labelP.textContent = imageInfo.name;
+
+                itemDiv.appendChild(canvas);
+                itemDiv.appendChild(labelP);
+                imageGrid.appendChild(itemDiv);
+                
+                // Draw Base64 image data onto the Canvas
+                const ctx = canvas.getContext('2d');
+                const img = new Image();
+                img.onload = function() {
+                    // Scale image to fit the 150x150 canvas perfectly
+                    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                    const x = (canvas.width / 2) - (img.width / 2) * scale;
+                    const y = (canvas.height / 2) - (img.height / 2) * scale;
+                    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                };
+                img.src = imageInfo.dataUrl;
+                
+                // Add click listener to open the original renamed file using the Electron shell
+                itemDiv.addEventListener('click', () => {
+                    window.electronAPI.openFile(imageInfo.filePath);
+                });
             });
-
-            resultsSection.classList.remove('hidden');
         }
+
+        // --- 4. Clear and Reset ---
+        clearButton.addEventListener('click', () => {
+            // Clean up the temporary folder first
+            window.electronAPI.clearTemp(currentTempDir);
+            currentFilePath = null;
+            currentTempDir = null;
+            
+            // Reset UI State
+            fileInput.value = '';
+            fileNameDisplay.textContent = 'No file selected.';
+            extractButton.disabled = true;
+            statusArea.classList.add('hidden');
+            resultsArea.classList.add('hidden');
+            imageGrid.innerHTML = '';
+        });
         
-        // Download Single function remains, but is not exposed in the UI
-        async function downloadSingle(item) {
-            try {
-                const response = await window.electronAPI.downloadSingle(item);
-                if (response.success) {
-                    showCustomNotification(response.message, 'success');
-                } else {
-                    showCustomNotification(response.message, 'error');
-                }
-            } catch (error) {
-                console.error("Error during single download:", error);
-                showCustomNotification('Failed to save file.', 'error');
-            }
-        }
-
     </script>
-
 </body>
 </html>

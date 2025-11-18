@@ -1,16 +1,12 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    // File selection dialogs
-    openFileDialog: () => ipcRenderer.invoke('open-file-dialog'),
-    selectSaveDirectory: () => ipcRenderer.invoke('select-save-directory'),
+    // Exposes the main processing function
+    startProcessing: (pdfFilePath) => ipcRenderer.invoke('start-processing', pdfFilePath),
     
-    // Core processing function
-    startProcessing: (payload) => ipcRenderer.invoke('start-processing', payload),
-    
-    // Single download for convenience
-    downloadSingle: (item) => ipcRenderer.invoke('download-single', item),
+    // NEW: Exposes the function to open the extracted file in the system shell
+    openFile: (filePath) => ipcRenderer.invoke('open-file-in-shell', filePath),
 
-    // Listener for status updates from the main process
-    onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, message) => callback(message))
+    // NEW: Exposes the function to clean up the temporary directory
+    clearTemp: (tempDirPath) => ipcRenderer.invoke('clear-temp', tempDirPath)
 });
